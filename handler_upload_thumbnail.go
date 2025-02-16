@@ -1,10 +1,11 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -32,7 +33,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
-	// TODO: implement the upload here
+	// implement the upload here
 	const maxMemory = 10 << 20 // 10MB
 	r.ParseMultipartForm(maxMemory)
 
@@ -43,36 +44,52 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer file.Close()
 
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" {
-		respondWithError(w, http.StatusBadRequest, "Missing Content-Type for thumbnail", nil)
-		return
-	}
-
-	thubmnail, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't read file", err)
-		return
-	}
-
-	videoMetaData, err := cfg.db.GetVideo(videoID)
+	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't find video", err)
 		return
 	}
-	if videoMetaData.UserID != userID {
+	if video.UserID != userID {
 		respondWithError(w, http.StatusUnauthorized, "Not authorized to update this video", err)
 		return
 	}
 
-	encodeThumbnail := base64.StdEncoding.EncodeToString(thubmnail)
-	encodedDataURL := fmt.Sprintf("data:%s;base64,%s", contentType, encodeThumbnail)
-	videoMetaData.ThumbnailURL = &encodedDataURL
-	err = cfg.db.UpdateVideo(videoMetaData)
+	mediaType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid Content-Type", err)
+		return
+	}
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Invalid file type", nil)
+		return
+	}
+	fileExtension, err := mime.ExtensionsByType(mediaType)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Couldn't get extension by type", nil)
+		return
+	}
+
+	filename := buildFileName(videoID, fileExtension[0])
+	assetPath := cfg.buildAssetDiskPath(filename)
+	newfile, err := os.Create(assetPath)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't create file", err)
+		return
+	}
+	defer newfile.Close()
+
+	if _, err = io.Copy(newfile, file); err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't copy file", err)
+		return
+	}
+
+	thumbnailURL := cfg.getAssetURL(filename)
+	video.ThumbnailURL = &thumbnailURL
+	err = cfg.db.UpdateVideo(video)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't update thumbnail", err)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, videoMetaData)
+	respondWithJSON(w, http.StatusOK, video)
 }
