@@ -69,7 +69,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	filename := buildFileName(videoID, fileExtension[0])
+	filename := buildFileName(fileExtension[0])
 	assetPath := cfg.buildAssetDiskPath(filename)
 	newfile, err := os.Create(assetPath)
 	if err != nil {
