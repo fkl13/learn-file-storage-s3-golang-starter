@@ -32,3 +32,7 @@ func (cfg apiConfig) buildAssetDiskPath(assetPath string) string {
 func (cfg apiConfig) getAssetURL(filePath string) string {
 	return fmt.Sprintf("http://localhost:%s/assets/%s", cfg.port, filePath)
 }
+
+func (cfg apiConfig) getObjectURL(key string) string {
+	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, key)
+}
